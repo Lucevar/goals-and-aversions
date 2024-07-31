@@ -1,29 +1,22 @@
 -- MCM
-local modName = "Goals"
+local modName = "Character Goals"
 
 local defaultConfig = {
     enabled = true,
-    popupAfterChargen = true
 }
 local configFile = modName
 local config = mwse.loadConfig(configFile, defaultConfig)
 
 local goalsMenuId = tes3ui.registerID("goalsMenu")
+local testheader = tes3ui.registerID("testheaderID")
 local descriptionHeaderId = tes3ui.registerID("goalDescriptionHeaderText")
 local descriptionTextId = tes3ui.registerID("goalDescriptionText")
-
--- Store goals data 
--- per character/save
-local tempGoalsList = { 
-    { name = "Fish 50 boots", 
-      description = "Be unlucky enough to fish 50 pairs of boots using Ultimate Fishing. Relax and enjoy the old school experience." 
-    },
-    { name = "Make friends with M'aiq", 
-      description = "M'aiq seems like he could use a friend. Maybe you could be that friend." 
-    },
- }
+local makeActiveButtonId = tes3ui.registerID("makeActiveButton")
+local descriptionInputID = tes3ui.registerID("descriptionInputID")
+local randomButtonResult = tes3ui.registerID("randomButtonResultID")
 
 local goalData
+
 
 local function registerModConfig()
     local template = mwse.mcm.createTemplate({ name = modName, config = config, defaultConfig = defaultConfig, showDefaultSetting = true })
@@ -31,9 +24,14 @@ local function registerModConfig()
 
     local settings = template:createSideBarPage({ label = "Settings" })
 
-    settings:createYesNoButton({ label = "Enable mod", configKey = "enabled" })
+    settings:createYesNoButton({ label = "Enable mod - requires restart", configKey = "enabled" })
 
-    settings:createYesNoButton({ label = "Show menu after chargen", configKey = "popupAfterChargen" })
+    local goalInspirationPage = template:createSideBarPage({ label = "Goal Ideas"})
+
+    local goalList = require("luce.goals.config.core-goals")
+    for _, goal in ipairs(goalList) do
+        goalInspirationPage:createActiveInfo({ label = goal.name, description = goal.description })
+    end
 
     template:register()
 end
@@ -42,116 +40,87 @@ event.register(tes3.event.modConfigReady, registerModConfig)
 -- Create goals menu
 local okayButton
 
-local function clickedOkay(goalsMenu)
-    -- if data.currentBackground then
-    --     event.unregister("simulate", startBackgroundWhenChargenFinished)
-    --     event.register("simulate", startBackgroundWhenChargenFinished)
-    -- end
-    goalsMenu:destroy()
-    tes3ui.leaveMenuMode()
-    --data.inBGMenu = false
-    --event.trigger("Goals:OkayMenuClicked")
+local function clickedCancel(menu)
+    if (tes3ui.findMenu(menu) ~= nil) then
+        tes3ui.leaveMenuMode()
+        tes3ui.findMenu(menu):destroy()
+    end
 end
 
-local function clickedGoal(goal)
-    -- data.currentSelectedGoal = goal.name
-    local header = tes3ui.findMenu(goalsMenuId):findChild(descriptionHeaderId)
-    header.text = goal.name
+local function clickedRandom()
+    local goalList = require("luce.goals.config.core-goals")
+    return goalList[ math.random(#goalList) ] 
+end
 
-    local description = tes3ui.findMenu(goalsMenuId):findChild(descriptionTextId)
-    description.text = goal.description
-    description:updateLayout()
-
-    -- if not backgroundsList[data.currentBackground] then
-    --     return
-    -- end
-
-    -- if backgroundsList[data.currentBackground].checkDisabled and backgroundsList[data.currentBackground].checkDisabled() then
-    --     header.color = tes3ui.getPalette("disabled_color")
-    --     okayButton.widget.state = 2
-    --     okayButton.disabled = true
-    -- else
-    --     header.color = tes3ui.getPalette("header_color")
-    --     okayButton.widget.state = 1
-    --     okayButton.disabled = false
-    -- end
-
+local function clickedOkay(newName, newDescription)
+    goalData.currentGoalName = newName
+    goalData.currentGoalDescription = newDescription
+    if (tes3ui.findMenu(goalsMenuId) ~= nil) then
+        tes3ui.findMenu(goalsMenuId):destroy()
+        tes3ui.leaveMenuMode()
+    end
 end
 
 local function createGoalsMenu()
+    mwse.log("Creating goals menu")
+    if (tes3ui.findMenu(goalsMenuId) ~= nil) then
+        mwse.log("Already open")
+        return
+    end
+
     local goalsMenu = tes3ui.createMenu{ id = goalsMenuId, fixedFrame = true }
     local outerBlock = goalsMenu:createBlock()
     outerBlock.flowDirection = "top_to_bottom"
     outerBlock.autoHeight = true
-    outerBlock.autoWidth = true
+    outerBlock.minWidth = 320
 
-    local title = outerBlock:createLabel{ text = "Choose a goal"}
-    title.absolutePosAlignX = 0.5
-    title.borderTop = 4
-    title.borderBottom = 4
-    title.color = tes3ui.getPalette("header_color")
+    local nameLabel = goalsMenu:createLabel{ text = "Set a goal name: \n" }
+    nameLabel.color = tes3ui.getPalette("header_color")
 
-    local navigationBlock = outerBlock:createBlock()
-    navigationBlock.minWidth = 500
-    navigationBlock.flowDirection = "left_to_right"
-    navigationBlock.widthProportional = 1.0
-    navigationBlock.autoHeight = true
+    local thinBorder = goalsMenu:createThinBorder()
+    thinBorder.height = 30
+    thinBorder.width = 300
+    thinBorder.paddingAllSides = 3
 
-    local activeGoalsButton = navigationBlock:createButton{ text = "Active Goals" }
-    local addGoalButton = navigationBlock:createButton{ text = "Add Goal" }
-    local goalListsButton = navigationBlock:createButton{ text = "Goal Lists" }
-    local randomGoalButton = navigationBlock:createButton{ text = "Random Goal" }
+    local nameInput = thinBorder:createTextInput{ id = nameInputID }
+    nameInput.text = goalData.currentGoalName  -- initial text
+    nameInput.borderAllSides = 1
+    nameInput.widget.lengthLimit = 28  -- TextInput custom properties
 
-    local innerBlock = outerBlock:createBlock()
-    innerBlock.height = 350
-    innerBlock.autoWidth = true
-    innerBlock.flowDirection = "left_to_right"
+    local descriptionLabel = goalsMenu:createLabel{ text = "\nSet a goal description: \n" }
+    descriptionLabel.color = tes3ui.getPalette("header_color")
 
-    local activeGoalListBlock = innerBlock:createVerticalScrollPane{}
-    activeGoalListBlock.minWidth = 300
-    activeGoalListBlock.autoWidth = true
-    activeGoalListBlock.paddingAllSides = 4
-    activeGoalListBlock.borderRight = 6
+    local descriptionInput = goalsMenu:createParagraphInput{ id = descriptionInputID }
+    descriptionInput.text = goalData.currentGoalDescription
+    descriptionInput.borderAllSides = 1
+    descriptionInput.wrapText = true
+    descriptionInput:register("mouseClick", function() tes3ui.acquireTextInput(descriptionInput) end)
 
-    for i, goal in ipairs(tempGoalsList) do
-        local goalButton = activeGoalListBlock:createTextSelect{ text = goal.name }
-        goalButton.autoHeight = true
-        goalButton.layoutWidthFraction = 1.0
-        goalButton.paddingAllSides = 2
-        goalButton.borderAllSides = 2
 
-        goalButton:register("mouseClick", function()
-            clickedGoal(goal)
+    -- local buttonBlock = goalsMenu:createBlock()
+    -- buttonBlock.flowDirection = "left_to_right"
+    -- buttonBlock.widthProportional = 1
+
+    local okayButton = goalsMenu:createButton{ text = tes3.findGMST("sOK").value }
+    okayButton.autoHeight = true
+    okayButton.paddingAllSides = 2
+    okayButton.borderAllSides = 2
+    local randomButton = goalsMenu:createButton{ text = "Random Goal" }
+    local cancelButton = goalsMenu:createButton{ text = tes3.findGMST("sCancel").value }
+
+    randomButton:register("mouseClick", function() 
+        local randomGoal = clickedRandom() 
+        nameInput.text = randomGoal.name
+        descriptionInput.text = randomGoal.description
+        if (randomGoal.replacerOptions ~= nil) then
+            local replacement = randomGoal.replacerOptions[ math.random(#randomGoal.replacerOptions) ]
+            nameInput.text = nameInput.text:gsub("REPLACE", replacement)
+            descriptionInput.text =  descriptionInput.text:gsub("REPLACE", replacement)
+        end
+
         end )
-
-    end
-
-    local descriptionBlock = innerBlock:createThinBorder()
-    descriptionBlock.layoutHeightFraction = 1.0
-    descriptionBlock.width = 300
-    descriptionBlock.borderRight = 10
-    descriptionBlock.flowDirection = "top_to_bottom"
-    descriptionBlock.paddingAllSides = 10
-
-    local descriptionHeader = descriptionBlock:createLabel{ id = descriptionHeaderId, text = ""}
-    descriptionHeader.color = tes3ui.getPalette("header_color")
-
-    local descriptionText = descriptionBlock:createLabel{ id = descriptionTextId, text = "" }
-    descriptionText.wrapText = true
-
-    -- Bottom button block
-    local bottomButtonBlock = outerBlock:createBlock()
-    bottomButtonBlock.flowDirection = "left_to_right"
-    bottomButtonBlock.widthProportional = 1.0
-    bottomButtonBlock.autoHeight = true
-    bottomButtonBlock.childAlignX = 1.0
-
-    --OKAY
-    okayButton = bottomButtonBlock:createButton{ id = tes3ui.registerID("goalOkayButton"), text = tes3.findGMST(tes3.gmst.sOK).value }
-    okayButton.alignX = 1.0
-    okayButton:register("mouseClick", function()
-            clickedOkay(goalsMenu)
-    end)
+    cancelButton:register("mouseClick", function() clickedCancel(goalsMenuId) end )
+    okayButton:register("mouseClick", function() clickedOkay(nameInput.text, descriptionInput.text) end )
 
     goalsMenu:updateLayout()
     tes3ui.enterMenuMode(goalsMenuId)
@@ -163,15 +132,16 @@ event.register("Goals:OpenGoalsMenu", function() createGoalsMenu() end)
 local goalStatUID = tes3ui.registerID("GoalNameStatUI")
 
 local function updateGoalStat()
+    mwse.log("Update goal stat")
     local menu = tes3ui.findMenu(tes3ui.registerID("MenuStat"))
 
     if menu then
         local goalLabel = menu:findChild(goalStatUID)
-        --if data and data.currentGoal then
-          goalLabel.text = "Fish 50 pairs of boots"
-        --else
-            -- goalLabel.text = "None"
-        --end
+        if goalData and goalData.currentGoalName then
+          goalLabel.text = goalData.currentGoalName
+        else
+            goalLabel.text = "None"
+        end
         menu:updateLayout()
     end
 end
@@ -179,7 +149,7 @@ event.register("menuEnter", updateGoalStat)
 
 -- Create the tooltip when hovering over the active goal
 local function createGoalTooltip()
-    --if data.currentGoal then
+    if goalData.currentGoalName then
         local tooltip = tes3ui.createTooltipMenu()
         local outerBlock = tooltip:createBlock()
         outerBlock.flowDirection = "top_to_bottom"
@@ -191,28 +161,38 @@ local function createGoalTooltip()
         outerBlock.autoHeight = true
 
         local header = outerBlock:createLabel{
-            --text = goal.name
-            text = "Fish 50 pairs of boots"
+            text = goalData.currentGoalName
         }
         header.absolutePosAlignX = 0.5
         header.color = tes3ui.getPalette("header_color")
 
 
         local description = outerBlock:createLabel{
-            --text = getDescription(goal)
-            text = "Be unlucky enough to fish 50 pairs of boots using Ultimate Fishing. Relax and enjoy the old school experience."
+                text = goalData.currentGoalDescription
         }
         description.autoHeight = true
         description.width = 285
         description.wrapText = true
 
         tooltip:updateLayout()
-    --end
+    end
 end
 
+local function loaded()
+    tes3.player.data.luceGoals = tes3.player.data.luceGoals or {}
+    goalData = tes3.player.data.luceGoals
+    goalData.currentGoalName = goalData.currentGoalName or "Explore"
+    goalData.currentGoalDescription = goalData.currentGoalDescription or "Look for trouble."
+end
+
+event.register("loaded", loaded )
 
 -- Create the goal block on the stats menu ui
 local function createGoalStat(e)
+    if not (config.enabled == true) then
+        return
+    end
+
     local goalHeadingText = "Goal"
 
     local GUI_Goal_Stat = tes3ui.registerID(GUI_MenuStat_Goal_Stat)
@@ -243,16 +223,10 @@ local function createGoalStat(e)
     goalHeadingLabel:register("help", createGoalTooltip )
     nameBlock:register("help", createGoalTooltip )
     nameLabel:register("help", createGoalTooltip )
+    nameBlock:register("mouseClick", createGoalsMenu )
     nameLabel:register("mouseClick", createGoalsMenu )
 
     menu:updateLayout()
 
 end
 event.register("uiActivated", createGoalStat, { filter = "MenuStat" })
-
--- New menu to set Goals text
-
--- popup after chargen
-
--- Randomly generate x
--- Copy to clipboard
